@@ -14,6 +14,9 @@ public class CameraFollow : MonoBehaviour
     [SerializeField]
     private float movingSpeed = 0.3f;
 
+    [SerializeField, Range(0.1f, 5)]
+    private float maxElevation;
+
     [SerializeField]
     private Transform target;
 
@@ -51,14 +54,7 @@ public class CameraFollow : MonoBehaviour
     {
         get
         {
-            if (obstructed)
-            {
-                return alteredDistance;
-            }
-            else
-            {
-                return distance;
-            }
+            return distance;
         }
         set
         {
@@ -81,7 +77,6 @@ public class CameraFollow : MonoBehaviour
         if (target != null)
         {
             SetPosAndRotBasedOnDistAndAngle();
-            SetElevation();
 
             Move();
         }
@@ -121,7 +116,20 @@ public class CameraFollow : MonoBehaviour
 
     private void SetElevation()
     {
+        // TODO: FIx
 
+        elevation = 0;
+
+        Vector3 maxElevationPosition = intendedPosition;
+        maxElevationPosition.y += maxElevation;
+
+        RaycastHit hitInfo;
+        bool result = Physics.Raycast(maxElevationPosition, Vector3.down, out hitInfo, maxElevation, mask);
+
+        if (result && hitInfo.point.y > intendedPosition.y)
+        {
+            elevation = (hitInfo.point.y - intendedPosition.y) + (intendedPosition.y - target.position.y);
+        }
     }
 
     /// <summary>
@@ -131,6 +139,8 @@ public class CameraFollow : MonoBehaviour
     /// <returns>A position for the camera</returns>
     private Vector3 LerpToNonObstructedPosition()
     {
+        float movSpeed = movingSpeed;
+
         // An unobstructed position between the player
         // character's head and the intended position
         Vector3 nonObstructedPos = NonObstructedPos(intendedPosition, target, distance);
@@ -159,6 +169,13 @@ public class CameraFollow : MonoBehaviour
         // Sets the distance between the target and the non-obstructed position
         if (obstructed)
         {
+            //SetElevation();
+            //if (elevation > 0)
+            //{
+            //    nonObstructedPos = intendedPosition;
+            //    nonObstructedPos.y += elevation;
+            //}
+
             alteredDistance = Vector3.Distance(target.position, nonObstructedPos);
         }
 
@@ -168,9 +185,15 @@ public class CameraFollow : MonoBehaviour
             target.position +
             Vector3.Project(transform.position - target.position,
                             intendedPosition - target.position);
+        
+        if (!obstructed &&
+            Vector3.Distance(projectedPosition, nonObstructedPos) < 0.5f)
+        {
+            movSpeed = 1;
+        }
 
         // Lerps between the projected position and the non-obstructed position
-        return Vector3.Lerp(projectedPosition, nonObstructedPos, movingSpeed);
+        return Vector3.Lerp(projectedPosition, nonObstructedPos, movSpeed);
     }
 
     /// <summary>
@@ -208,6 +231,7 @@ public class CameraFollow : MonoBehaviour
 
     public float GetCurrentDistanceFromTarget()
     {
+        Debug.Log("dist: " + Vector3.Distance(transform.position, target.position));
         return Vector3.Distance(transform.position, target.position);
     }
 

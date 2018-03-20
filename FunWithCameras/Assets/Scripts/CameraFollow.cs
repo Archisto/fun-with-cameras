@@ -12,15 +12,25 @@ public class CameraFollow : MonoBehaviour
     private float distance;
 
     [SerializeField]
+    private float movingSpeed = 0.3f;
+
+    [SerializeField]
     private Transform target;
+
+    [SerializeField]
+    private Transform secondaryTarget;
 
     [SerializeField]
     private LayerMask mask;
 
     [SerializeField]
-    private float obstructionCheckAccuracy = 0.3f;
+    private float distFromObstruction = 0.3f;
 
+    private Vector3 intendedPosition;
+    private Quaternion intendedRotation;
+    private float elevation;
     private bool obstructed;
+
     private float alteredDistance;
     private Vector3[,] obstructedLines;
     private int currentGizmoLineIndex;
@@ -70,66 +80,140 @@ public class CameraFollow : MonoBehaviour
     {
         if (target != null)
         {
-            GoToPosition();
+            SetPosAndRotBasedOnDistAndAngle();
+            SetElevation();
+
+            Move();
         }
     }
 
-    private void GoToPosition()
+    private void Move()
     {
-        Vector3 newPosition;
-        Quaternion newRotation = transform.rotation;
-        float angleRad = Mathf.Deg2Rad * angle;
+        transform.position = LerpToNonObstructedPosition();
+        transform.rotation = intendedRotation;
+    }
 
-        obstructed = false;
+    /// <summary>
+    /// Sets the intended position and rotation.
+    /// If there aren't any obstacles in the way,
+    /// the camera uses these values.
+    /// </summary>
+    private void SetPosAndRotBasedOnDistAndAngle()
+    {
+        Vector3 position;
+        Quaternion rotation = transform.rotation;
+
+        float angleRad = Mathf.Deg2Rad * angle;
 
         float forward = Mathf.Sin(angleRad) * distance;
         float up = Mathf.Cos(angleRad) * distance;
 
-        newPosition = target.position - (target.forward * forward);
-        newPosition += Vector3.up * up;
-
-        newPosition = NonObstructedPoint(newPosition);
-
-        if (obstructed)
-        {
-            currentGizmoLineIndex++;
-        }
+        position = target.position - (target.forward * forward);
+        position += Vector3.up * up;
 
         float angleX = -1 * angle + 90;
 
-        newRotation = Quaternion.Euler(angleX, target.rotation.eulerAngles.y, 0);
+        rotation = Quaternion.Euler(angleX, target.rotation.eulerAngles.y, 0);
 
-        transform.position = newPosition;
-        transform.rotation = newRotation;
+        intendedPosition = position;
+        intendedRotation = rotation;
     }
 
-    private Vector3 NonObstructedPoint(Vector3 camPosition)
+    private void SetElevation()
     {
-        Ray ray = new Ray(target.position, camPosition - target.position);
+
+    }
+
+    /// <summary>
+    /// Gets a position where the camera
+    /// isn't obstructed by any world geometry.
+    /// </summary>
+    /// <returns>A position for the camera</returns>
+    private Vector3 LerpToNonObstructedPosition()
+    {
+        // An unobstructed position between the player
+        // character's head and the intended position
+        Vector3 nonObstructedPos = NonObstructedPos(intendedPosition, target, distance);
+
+        // Checks if there aren't any obstaces between the
+        // player char's foot and the non-obstructed position
+        if (!obstructed)
+        {
+            float distanceFromSecTarget =
+                Vector3.Distance(secondaryTarget.position, nonObstructedPos);
+
+            Vector3 nonObstructedFromSecTargetPos = NonObstructedPos(
+                nonObstructedPos, secondaryTarget, distanceFromSecTarget);
+
+            if (obstructed)
+            {
+                // Projects the non-obstructed foot-to-non-obstructed position
+                // to the line between target and the intended position
+                nonObstructedPos =
+                    target.position +
+                    Vector3.Project(nonObstructedFromSecTargetPos - target.position,
+                            intendedPosition - target.position);
+            }
+        }
+
+        // Sets the distance between the target and the non-obstructed position
+        if (obstructed)
+        {
+            alteredDistance = Vector3.Distance(target.position, nonObstructedPos);
+        }
+
+        // Projects the current position to the line
+        // between target and the intended position
+        Vector3 projectedPosition =
+            target.position +
+            Vector3.Project(transform.position - target.position,
+                            intendedPosition - target.position);
+
+        // Lerps between the projected position and the non-obstructed position
+        return Vector3.Lerp(projectedPosition, nonObstructedPos, movingSpeed);
+    }
+
+    /// <summary>
+    /// Gets a non-obstructed position between the
+    /// given position and the target's position.
+    /// </summary>
+    /// <param name="position">A position</param>
+    /// <param name="target">A target</param>
+    /// <param name="rayDistance">Maximum distance for the raycast</param>
+    /// <returns></returns>
+    private Vector3 NonObstructedPos(
+        Vector3 position, Transform target, float rayDistance)
+    {
+        Ray ray = new Ray(target.position, position - target.position);
+
         RaycastHit hitInfo;
         bool result = Physics.SphereCast
-            (ray, 0.01f, out hitInfo, distance, mask);
+            (ray, 0.01f, out hitInfo, rayDistance, mask);
+
+        obstructed = result;
 
         if (result)
         {
-            obstructed = true;
-
-            UpdateGizmoLines();
+            SetObstructedGizmoLine(target);
 
             Vector3 newPosition =
-                hitInfo.point + (target.position - camPosition).normalized
-                * obstructionCheckAccuracy;
-
-            alteredDistance = Vector3.Distance(target.position, newPosition);
+                hitInfo.point + (target.position - position).normalized
+                * distFromObstruction;
 
             return newPosition;
         }
 
-        return camPosition;
+        return position;
     }
 
-    private void UpdateGizmoLines()
+    public float GetCurrentDistanceFromTarget()
     {
+        return Vector3.Distance(transform.position, target.position);
+    }
+
+    private void SetObstructedGizmoLine(Transform target)
+    {
+        currentGizmoLineIndex++;
         if (currentGizmoLineIndex >= obstructedLines.GetLength(0))
         {
             currentGizmoLineIndex = 0;
@@ -149,7 +233,7 @@ public class CameraFollow : MonoBehaviour
             Gizmos.color = Color.red;
             for (int i = 0; i < obstructedLines.GetLength(0); i++)
             {
-                if (obstructedLines[i, 0] != null)
+                if (obstructedLines[i, 0] != Vector3.zero)
                 {
                     Gizmos.DrawLine(obstructedLines[i, 0], obstructedLines[i, 1]);
                 }

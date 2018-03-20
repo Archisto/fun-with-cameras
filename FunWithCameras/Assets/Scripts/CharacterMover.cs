@@ -28,7 +28,7 @@ public class CharacterMover : MonoBehaviour
     private bool jumped;
 
     private CharacterController charController;
-    private Renderer renderer;
+    private Renderer charRenderer;
     private CameraFollow playerCamera;
 
     // Use this for initialization
@@ -36,7 +36,7 @@ public class CharacterMover : MonoBehaviour
     {
         Vector3 movement = Vector3.zero;
         charController = GetComponent<CharacterController>();
-        renderer = GetComponent<Renderer>();
+        charRenderer = GetComponent<Renderer>();
         playerCamera = FindObjectOfType<CameraFollow>();
     }
 
@@ -49,6 +49,7 @@ public class CharacterMover : MonoBehaviour
         Jump();
         Turn();
         ControlCamera();
+        UpdateFirstPersonMode();
 
         charController.Move(movement * Time.deltaTime);
 
@@ -155,8 +156,6 @@ public class CharacterMover : MonoBehaviour
 
     private void ControlCamera()
     {
-        float cameraAngleDelta = 0;
-
         bool lookUp = Input.GetKey(KeyCode.UpArrow);
         bool lookDown = Input.GetKey(KeyCode.DownArrow);
 
@@ -166,6 +165,25 @@ public class CharacterMover : MonoBehaviour
             lookUp = lookDown;
             lookDown = temp;
         }
+
+        float cameraAngleDelta = GetCameraAngleDelta(lookUp, lookDown);
+
+        playerCamera.Angle += cameraAngleDelta * Time.deltaTime;
+
+        float distanceChange =
+            Input.mouseScrollDelta.y * -1f * cameraDistSpeed * Time.deltaTime;
+
+        if (distanceChange != 0)
+        {
+            playerCamera.Distance += distanceChange;
+            playerCamera.Distance = Mathf.Clamp
+                (playerCamera.Distance, cameraMinDist, cameraMaxDist);
+        }
+    }
+
+    private float GetCameraAngleDelta(bool lookUp, bool lookDown)
+    {
+        float cameraAngleDelta = 0;
 
         if (lookUp && playerCamera.Angle <
                 (FirstPersonMode ? cameraMaxAngleFPMode : cameraMaxAngle))
@@ -177,26 +195,25 @@ public class CharacterMover : MonoBehaviour
             cameraAngleDelta += cameraAngleSpeed * -1f;
         }
 
-        playerCamera.Angle += cameraAngleDelta * Time.deltaTime;
+        return cameraAngleDelta;
+    }
 
-        float distanceChange = Input.mouseScrollDelta.y * -1f * cameraDistSpeed * Time.deltaTime;
+    private void UpdateFirstPersonMode()
+    {
+        bool shouldBeInFPMode =
+            playerCamera.Distance < firstPersonDist ||
+            playerCamera.GetCurrentDistanceFromTarget() < firstPersonDist;
 
-        if (distanceChange != 0)
+        if (!FirstPersonMode)
         {
-            playerCamera.Distance += distanceChange;
-            playerCamera.Distance = Mathf.Clamp(playerCamera.Distance, cameraMinDist, cameraMaxDist);
-
-            if (playerCamera.Distance < firstPersonDist)
+            if (shouldBeInFPMode)
             {
-                if (!FirstPersonMode)
-                {
-                    FirstPersonMode = true;
-                }
+                FirstPersonMode = true;
             }
-            else if (FirstPersonMode)
-            {
-                FirstPersonMode = false;
-            }
+        }
+        else if (!shouldBeInFPMode)
+        {
+            FirstPersonMode = false;
         }
     }
 
@@ -204,11 +221,11 @@ public class CharacterMover : MonoBehaviour
     {
         get
         {
-            return !renderer.enabled;
+            return !charRenderer.enabled;
         }
         set
         {
-            renderer.enabled = !value;
+            charRenderer.enabled = !value;
 
             if (value == false)
             {
